@@ -103,3 +103,6 @@ The tournament opponents are listed below. (See also: sample heuristics and play
 ## Submitting
 
 Your project is ready for submission when it meets all requirements of the project rubric.  Your code is finished when it passes all unit tests, and you have successfully implemented a suitable heuristic function.
+
+## Solution
+I have created an agent that uses a novel heuristic that improves game performance. An analysis on the proposed heuristic and the way it compares to the previous heuristics is provided in the file `heuristic_analysis.pdf`
