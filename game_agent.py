@@ -6,6 +6,7 @@ augment the test suite with your own test cases to further test your code.
 You must test your agent's strength against a set of agents with known
 relative strength using tournament.py and include the results in your report.
 """
+import numpy as np
 import random
 import isolation
 import timeit
@@ -44,12 +45,27 @@ def custom_score(game,player):
     if game.is_winner(player):
         #print("win")
         return float("inf")
-        
     
-    number_own_moves=len(game.get_legal_moves(player))
-    number_adv_moves=len(game.get_legal_moves(game.get_opponent(player)))
-    return float(number_own_moves-2*number_adv_moves)
-    #raise NotImplementedError
+    #Implementation of the open_space() heuristic
+    number_empty_spaces=[0, 0, 0, 0]
+    own_position=game.get_player_location(player);
+    empty_spaces=game.get_blank_spaces()
+    for space in empty_spaces:
+        if (space[0]>own_position[0]) and (space[1]>own_position[1]):
+             number_empty_spaces[3]+=1
+        if (space[0]<=own_position[0]) and (space[1]>own_position[1]):
+             number_empty_spaces[2]+=1
+        if (space[0]>own_position[0]) and (space[1]<=own_position[1]):
+             number_empty_spaces[1]+=1
+        if (space[0]<=own_position[0]) and (space[1]<=own_position[1]):
+             number_empty_spaces[0]+=1
+    central=np.std( number_empty_spaces)
+    #Implementation of improved_score heuristic
+    number_own_moves=float(len(game.get_legal_moves(player)))
+    number_adv_moves=float(len(game.get_legal_moves(game.get_opponent(player))))     
+    #Combination of the results of the 2 heuristics
+    return number_own_moves-8*number_adv_moves-central
+
     
 
 
@@ -84,7 +100,7 @@ class CustomPlayer:
     """
 
     def __init__(self, search_depth=3, score_fn=custom_score,
-                 iterative=True, method='alphabeta', timeout=15.):
+                 iterative=True, method='alphabeta', timeout=15.,reflection=1):
         self.search_depth = search_depth
         self.iterative = iterative
         self.score = score_fn
@@ -92,7 +108,7 @@ class CustomPlayer:
         self.time_left = None
         self.start_time=None
         self.TIMER_THRESHOLD = timeout
-    
+        self.reflection=reflection
     
     def get_move(self, game, legal_moves, time_left):
         """Search for the best move from the available legal moves and return a
@@ -136,20 +152,54 @@ class CustomPlayer:
         # move from the game board (i.e., an opening book), or returning
         # immediately if there are no legal moves
         
+        # If there are no legal moves an invalid position is returned
         if not legal_moves:
-            print("lost")
-            return (-1,-1)
+           return (-1,-1)
+        # The first available move is saved as a backup if an exception occurs before any other moves can be evaluated
         current_move=legal_moves[0]
+        # In case there is just one legal move, there is no reason for evaluation so we return it
+        if (len(legal_moves)==1):
+            return current_move
+        
+        #The reflection strategy described by Malcolm is implemented
+        
+        #Generalization of reflection method for every table size  
+        width=int(game.width)
+        height=int(game.height)
+        central=(int(height/2),int(width/2))
+        table_size=width*height
+            
+        #Implementation of the reflection strategy
+        if self.reflection:
+            free_positions=game.get_blank_spaces()
+            if len(free_positions)==table_size:
+                return central
+            if len(free_positions)==table_size-1:
+                self.reflection=0
+                if central not in legal_moves:
+                    return(central[0]-1,central[1]-1)
+                else:
+                    return central
+            adv_pos=game.get_player_location(game.get_opponent(self))
+            own_moves=game.get_legal_moves(self)
+            refl_pos=(abs(adv_pos[0]-(height-1)),abs(adv_pos[1]-(width-1)))
+            if refl_pos in own_moves:
+                return refl_pos
+            else:
+                self.reflection=0
+        
         moves=legal_moves
         max_score=-float("Inf")
         try:
+          
             if self.iterative:
                 if self.method=="alphabeta":
-                    current_move=moves[0]
+                #Implementation of iterative alphabeta
                     for depth in range(1,49):      
                         if depth==1:
-                            max_score=self.score(game.forecast_move(moves[0]),self) 
-                            for move in moves:             
+                            max_score=self.score(game.forecast_move(legal_moves[0]),self) 
+                            #For the first level each move is evaluated
+                            for move in legal_moves:             
                                 minimax_score=self.minimax(game.forecast_move(move),0)
                                 score=minimax_score[0]
                                 if score>=max_score:
@@ -158,25 +208,23 @@ class CustomPlayer:
                         else:    
                             scores=[]
                             pos_moves=[]    
-                            for move in moves:
-                            # The search method call (alpha beta or minimax) should happen in
-                            # here in order to avoid timeout. The try/except block will
-                            # automatically catch the exception raised by the search method
-                            # when the timer gets close to expiring
+                            #For the deeper levels alphabeta is called for evaluation
+                            for move in legal_moves:
                                 alpha_result=self.alphabeta(game=game.forecast_move(move),depth=depth-1,maximizing_player=False)
                                 scores.append(alpha_result[0])
                                 if max(scores)==float("Inf"):
                                     return move
                                     break  
                             if scores:              
-                                current_move=moves[scores.index(max(scores))]
+                                current_move=legal_moves[scores.index(max(scores))]
                     return current_move            
                 else:
-                    current_move=moves[0]
+                #Implementation of iterative minimax
                     for depth in range(1,49):      
                         if depth==1:
-                            max_score=self.score(game.forecast_move(moves[0]),self) 
-                            for move in moves:             
+                            max_score=self.score(game.forecast_move(legal_moves[0]),self) 
+                            #For the first level each move is evaluated
+                            for move in legal_moves:             
                                 minimax_score=self.minimax(game.forecast_move(move),0)
                                 score=minimax_score[0]
                                 if score>=max_score:
@@ -185,28 +233,25 @@ class CustomPlayer:
                         else:    
                             scores=[]
                             pos_moves=[]    
-                            for move in moves:
-                            # The search method call (alpha beta or minimax) should happen in
-                            # here in order to avoid timeout. The try/except block will
-                            # automatically catch the exception raised by the search method
-                            # when the timer gets close to expiring
+                            #For the deeper levels minimax is called for evaluation
+                            for move in legal_moves:
                                 minimax_result=self.minimax(game=game.forecast_move(move),depth=depth-1,maximizing_player=False)
                                 scores.append(minimax_result[0])
                                 if max(scores)==float("Inf"):
                                     return move
                                     break  
                             if scores:              
-                                current_move=moves[scores.index(max(scores))]        
+                                current_move=legal_moves[scores.index(max(scores))]        
                     return current_move
             else:
                 if self.method=='alphabeta':
-                    #print("Noniterative alpha")
+                 #Implementation of non-iterative alphabeta
                     try:
                         return  self.alphabeta(game,self.search_depth)[1]          
                     except Timeout:
                         return current_move
                 else:
-                    #print("Noniterative min")
+                 #Implementation of non-iterative minimax  
                     try:
                         return   self.minimax(game,self.search_depth)[1]          
                     except Timeout:
@@ -251,7 +296,7 @@ class CustomPlayer:
         if self.time_left() < self.TIMER_THRESHOLD:
             raise Timeout()
          # TODO: finish this function!
-       # print("timeout passed")
+        #Evaluation of the max level
         if maximizing_player:
             #print("player")
             scores=[]
@@ -266,7 +311,7 @@ class CustomPlayer:
                     scores.append(minmax_result[0])
             return(scores[scores.index(max(scores))],legal_moves[scores.index(max(scores))])      
         else:
-            #print("opponent")
+        #Evaluation of the min level
             scores=[]
             legal_moves=game.get_legal_moves(game.get_opponent(self))
             if len(legal_moves)==0:
@@ -323,6 +368,7 @@ class CustomPlayer:
         if self.time_left() < self.TIMER_THRESHOLD:
             raise Timeout()
         if maximizing_player:
+        #Evaluation of the max level    
             scores=[]
             legal_moves=game.get_legal_moves(self)
             if len(legal_moves)==0:
@@ -344,6 +390,7 @@ class CustomPlayer:
                         break    
             return(scores[scores.index(max(scores))],legal_moves[scores.index(max(scores))])      
         else:
+	    #Evaluation of the min level
             scores=[]
             legal_moves=game.get_legal_moves(game.get_opponent(self))
             if len(legal_moves)==0:
